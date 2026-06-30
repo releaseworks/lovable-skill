@@ -233,6 +233,7 @@ export async function fetchPage(
     for (const [k, v] of Object.entries(r)) {
       if (v === null) o[k] = null;
       else if (v instanceof Uint8Array) o[k] = btoa(String.fromCharCode(...v));
+      else if (typeof v === "bigint") o[k] = v.toString(); // int8 -> string (JSON-safe)
       else o[k] = v;
     }
     return o;

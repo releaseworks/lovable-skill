@@ -74,6 +74,8 @@ check "introspect gates /data to an allowlist (isAllowed)" -- has "$INTROSPECT" 
 check "fetchPage gates by the allowlist" -- has "$INTROSPECT" 'isAllowed(schema, table)'
 check "index.ts passes schema to fetchPage" -- has "$INDEX" 'fetchPage(schema, table'
 check "topoSort guards against unknown ref tables" -- has "$INTROSPECT" 'deps.has(ref_table)'
+check "introspect serializes bigint as string" -- has "$INTROSPECT" 'typeof v === "bigint"'
+check "index.ts guards JSON against BigInt" -- has "$INDEX" 'typeof v === "bigint"'
 
 # SKILL.md essentials.
 check "SKILL.md has a releaseworks name in frontmatter" -- hasre "$SKILL" '^name:[[:space:]]*releaseworks'

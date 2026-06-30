@@ -9,7 +9,12 @@ import { buildSchema, fetchPage } from "./introspect.ts";
 const SOURCE_ID = Deno.env.get("RW_SOURCE_ID")!;
 
 function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
+  // Replacer guards against any stray BigInt (e.g. int8 columns / array members):
+  // JSON.stringify can't serialize BigInt and would otherwise 500 the function.
+  const serialized = JSON.stringify(body, (_k, v) =>
+    typeof v === "bigint" ? v.toString() : v,
+  );
+  return new Response(serialized, {
     status,
     headers: { "content-type": "application/json" },
   });
