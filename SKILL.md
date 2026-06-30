@@ -27,6 +27,27 @@ What it covers:
 Pick the matching section below based on what the user asks for. The first-time
 setup is the **Setup** steps; the others are independent and reusable.
 
+## Critical rule: never invent values
+
+Every value you send to or set in Supabase — API hostnames/URLs, `source_id`,
+`token`, `public_key`, `callback_url`, `callback_token` — **must come verbatim
+from a Releaseworks API response or this skill's files.** Do **not** guess,
+fabricate, derive, or "fix up" any of them, and do not fall back to plausible
+defaults if a value is missing.
+
+If any API call fails, returns a non-2xx status, or returns a response that is
+missing an expected field or has an unexpected shape (see each step), **stop
+immediately**. Do not continue, do not improvise substitutes. Tell the user
+plainly:
+
+- which step failed and what was wrong (e.g. "the link-project response was
+  missing `public_key`"),
+- that setup was **not** completed, and
+- that they should **open a Releaseworks support request**
+  (https://releaseworks.ai/support) with that error so the team can help.
+
+A half-configured integration with made-up values is worse than a clean failure.
+
 ## Setup
 
 Run this the first time a user connects a project (or pastes a `link_token`).
@@ -72,9 +93,16 @@ It prints the backup-setup payload to stdout; parse these fields from it:
 }
 ```
 
-The script exits non-zero and prints the error on any HTTP failure — if so, stop
-and report it. Keep these values in memory only; **do not commit `token` or
-`callback_token`.** (Requires `curl` and `jq`.)
+**Validate the response before continuing.** It must be valid JSON with
+`linked: true` and a non-empty `source_id`, `token`, `public_key`,
+`callback_url`, and `callback_token`, and `public_key` must be a PEM block
+(begins with `-----BEGIN PUBLIC KEY-----`). If the script exited non-zero, or any
+of those fields is missing/empty/wrong-shaped, **stop** and follow the *Critical
+rule* above (tell the user what was missing and to open a support request). Do
+**not** invent or guess any of these values.
+
+Use exactly the values returned. Keep them in memory only; **do not commit
+`token` or `callback_token`.** (Requires `curl` and `jq`.)
 
 ### 3. Add the Edge function to the project
 
@@ -166,6 +194,11 @@ stops scheduling and cleans up the Releaseworks side.
 
 ## Guardrails
 
+- **Never invent values.** API hostnames/URLs, `source_id`, `token`,
+  `public_key`, and the callback values must come verbatim from a Releaseworks
+  API response — never guessed, derived, or defaulted. On any failed or
+  unexpected response, stop and tell the user to open a Releaseworks support
+  request (see *Critical rule*); don't improvise.
 - Never write `link_token`, `token`, `callback_token`, or `public_key` into the
   repository, comments, or commit messages. Secrets go only into Supabase
   secrets.
