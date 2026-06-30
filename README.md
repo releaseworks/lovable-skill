@@ -1,15 +1,21 @@
 # releaseworks
 
-The **Releaseworks Agent Skill** (skill name: `releaseworks`) — it manages a
-Lovable project's Releaseworks integration end to end, both initial setup and
-ongoing use:
+The **Releaseworks Agent Skill** (skill name: `releaseworks`) connects a Lovable
+project to **Releaseworks AI** — *the safety net behind every great Lovable
+build* — and manages the integration end to end, both initial setup and ongoing
+use. Releaseworks gives a Lovable project four things; this skill wires up the
+parts that need project access:
 
-- **Set up** — link the project for availability monitoring **and** deploy the
-  `rw-backup` Supabase Edge function for automated backups, in one task.
-- **Send code for analysis** — package the codebase and send it through the
-  project's `rw-sync` Edge function (which holds the credentials and relays the
-  upload), so the script needs no Releaseworks secret. Re-run any time to analyze
-  a new version.
+- **Set up Backup + Monitoring** — link the project for around-the-clock uptime
+  **Monitoring** **and** deploy the `rw-backup` Supabase Edge function for
+  vault-grade **Backups** (every version, row, and asset; export/restore; 30-day
+  retention), in one task.
+- **Send the codebase for App Health & Architecture** — package the codebase and
+  send it through the project's `rw-sync` Edge function (which holds the
+  credentials and relays the upload), so the script needs no Releaseworks secret.
+  Releaseworks then scans it for security/performance/readability issues (**App
+  Health**) and maps how the app fits together (**Architecture**). Re-run any time
+  to refresh both.
 - **Remove** — uninstall the integration (delete the function + secrets).
 
 The skill is executed by the Lovable agent — Lovable has access to the project's

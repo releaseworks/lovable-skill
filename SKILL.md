@@ -1,31 +1,41 @@
 ---
 name: releaseworks
 description: >-
-  Manage the Releaseworks integration for a Lovable project — both initial setup
-  and ongoing use. Set up: link for availability monitoring and deploy the
-  rw-backup Supabase Edge function for automated backups. Ongoing: send new
-  versions of the codebase to Releaseworks for analysis. Also removes the
-  integration. Use when a user wants to connect their Lovable/Supabase project to
-  Releaseworks, enable backups, send/analyze their codebase, remove/disconnect
-  Releaseworks, or pastes a Releaseworks link_token.
+  Connect a Lovable/Supabase project to Releaseworks AI — the safety net behind
+  every great Lovable build — and manage the integration over time. Setup wires
+  up Backup (deploy the rw-backup Supabase Edge function for vault-grade backups
+  of every version, row, and asset, with export/restore) and Monitoring
+  (around-the-clock uptime checks + alerts on the public domain); sending the
+  codebase feeds App Health (security, performance, readability scans) and
+  Architecture (an always-fresh map of the app). Can also remove the integration.
+  Use when a user wants to connect/set up Releaseworks, enable backups or
+  monitoring, send or analyze their codebase (App Health / Architecture),
+  remove/disconnect Releaseworks, or pastes a Releaseworks link_token.
 ---
 
 # Releaseworks
 
-This skill manages a Lovable project's Releaseworks integration — both **setup**
-and **ongoing use**. You (the agent) perform the work, since you have access to
-this project's Supabase; Releaseworks does not.
+This skill connects a Lovable project to **Releaseworks AI** — *"the safety net
+behind every great Lovable build"* — and manages the integration over time. You
+(the agent) perform the work, since you have access to this project's Supabase;
+Releaseworks does not.
 
-What it covers:
+Releaseworks gives a Lovable project four things; this skill wires up the parts
+that need project access:
 
-- **Set up** — link the project (availability monitoring) and deploy the
-  `rw-backup` Edge function for automated backups (one task; see below).
-- **Send code for analysis** — package and upload the current codebase; run this
-  again whenever you want Releaseworks to analyze a new version.
-- **Remove** — uninstall the integration.
+- **Backup** — vault-grade backups of every version, row, and asset, stored in a
+  secure vault off Lovable, with export/restore and 30-day retention. (Deploys
+  the `rw-backup` Edge function.)
+- **Monitoring** — around-the-clock uptime checks on the public domain with
+  incident, recovery, and latency alerts. (Enabled when the project is linked.)
+- **App Health** & **Architecture** — Releaseworks scans the codebase for
+  security, performance, and readability issues and maps how the app fits
+  together; this skill **sends the codebase** so both stay fresh. Re-run any time.
 
-Pick the matching section below based on what the user asks for. The first-time
-setup is the **Setup** steps; the others are independent and reusable.
+**Setup** covers Backup + Monitoring in one task; **Send the codebase** feeds App
+Health + Architecture; **Remove** uninstalls. Pick the matching section below
+based on what the user asks for — Setup is first-time; the others are independent
+and reusable.
 
 ## Critical rule: never invent values
 
