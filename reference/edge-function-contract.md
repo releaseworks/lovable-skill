@@ -62,7 +62,11 @@ The backend builds, and the Edge function reconstructs, exactly:
 ```
 
 - `METHOD` — upper-case HTTP method (`GET`).
-- `PATH` — request path, no host, no query (e.g. `/functions/v1/rw-backup/data`).
+- `PATH` — the request path **as the Edge function runtime receives it**, no host,
+  no query. Supabase strips the `/functions/v1` mount prefix before the function
+  runs, so this is `/rw-backup/<subpath>` (e.g. `/rw-backup/data`), **not**
+  `/functions/v1/rw-backup/data`. The backend signs this same stripped path; the
+  function uses its own `url.pathname`, which already excludes the prefix.
 - `CANONICAL_QUERY` — query params sorted by key, `k=v` joined by `&`,
   percent-encoded. Empty string if none.
 - `SHA256_HEX(body)` — hex SHA-256 of the raw request body; for GET (empty body)

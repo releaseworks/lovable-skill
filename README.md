@@ -6,8 +6,10 @@ ongoing use:
 
 - **Set up** — link the project for availability monitoring **and** deploy the
   `rw-backup` Supabase Edge function for automated backups, in one task.
-- **Send code for analysis** — package and upload the current codebase; re-run
-  any time to analyze a new version.
+- **Send code for analysis** — package the codebase and send it through the
+  project's `rw-sync` Edge function (which holds the credentials and relays the
+  upload), so the script needs no Releaseworks secret. Re-run any time to analyze
+  a new version.
 - **Remove** — uninstall the integration (delete the function + secrets).
 
 The skill is executed by the Lovable agent — Lovable has access to the project's
@@ -41,7 +43,8 @@ Ongoing actions (sending code, removing the integration) are separate sections i
 ```
 SKILL.md            the agent instructions (the skill itself)
 scripts/            deterministic shell scripts for the HTTP API calls (curl + jq)
-assets/rw-backup/   the Edge function source Lovable deploys (verbatim)
+assets/rw-backup/   Edge function Releaseworks pulls backups from (verbatim)
+assets/rw-sync/     Edge function that relays codebase uploads (verbatim)
 reference/          vendored edge-function contract (the interface spec)
 test/               conformance.sh — drift checks for the assets + SKILL.md
 ```

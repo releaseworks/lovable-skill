@@ -1,22 +1,28 @@
 #!/usr/bin/env bash
-# Package the current codebase and send it to Releaseworks for analysis.
-# Prints the snapshot JSON on success; exits non-zero with the error otherwise.
+# Package the current codebase and send it to Releaseworks for analysis, via the
+# project's rw-sync Edge function (which holds the Releaseworks credentials and
+# relays the upload). The script needs only project-public values, so every
+# subsequent sync is just re-running it.
 #
 # Usage:
-#   scripts/send-codebase.sh [source_id] [token] [backend]
-# or via env (preferred — these are the project's Releaseworks config):
-#   RW_SOURCE_ID=… RW_TOKEN=… scripts/send-codebase.sh
+#   scripts/send-codebase.sh [sync_url] [anon_key]
+# or via env (preferred — standard Supabase project config):
+#   SUPABASE_URL=… SUPABASE_ANON_KEY=… scripts/send-codebase.sh
 #
-# backend defaults to https://api.prod.releaseworks.ai (override via the 3rd arg
-# or RW_BACKEND). Requires: curl, jq, and git OR tar.
+# sync_url defaults to ${SUPABASE_URL}/functions/v1/rw-sync (or pass RW_SYNC_URL).
+# Requires: curl, jq, and git OR tar. No Releaseworks token needed.
 set -euo pipefail
 
-source_id="${1:-${RW_SOURCE_ID:-}}"
-token="${2:-${RW_TOKEN:-}}"
-backend="${3:-${RW_BACKEND:-https://api.prod.releaseworks.ai}}"
+sync_url="${1:-${RW_SYNC_URL:-}}"
+anon_key="${2:-${SUPABASE_ANON_KEY:-}}"
 
-if [ -z "$source_id" ] || [ -z "$token" ]; then
-  echo "error: source_id and token are required (args or RW_SOURCE_ID/RW_TOKEN)" >&2
+if [ -z "$sync_url" ] && [ -n "${SUPABASE_URL:-}" ]; then
+  sync_url="${SUPABASE_URL%/}/functions/v1/rw-sync"
+fi
+
+if [ -z "$sync_url" ] || [ -z "$anon_key" ]; then
+  echo "error: need the rw-sync URL and the Supabase anon key" >&2
+  echo "       set SUPABASE_URL + SUPABASE_ANON_KEY (or pass [sync_url] [anon_key])" >&2
   exit 2
 fi
 command -v curl >/dev/null || {
@@ -63,10 +69,11 @@ if [ "$size" -gt "$MAX_BYTES" ]; then
   exit 1
 fi
 
-url="${backend%/}/v1/code/snapshots"
-resp="$(curl -sS -X POST "$url" \
-  -H "Authorization: Bearer ${token}" \
-  -H "X-RW-Source-ID: ${source_id}" \
+# Authenticate to the Edge function with the project's anon key (Supabase JWT
+# verification). rw-sync relays to Releaseworks with the per-source token.
+resp="$(curl -sS -X POST "$sync_url" \
+  -H "Authorization: Bearer ${anon_key}" \
+  -H "apikey: ${anon_key}" \
   -H 'Content-Type: application/gzip' \
   --data-binary "@${archive}" \
   -w $'\n%{http_code}')"
@@ -74,7 +81,7 @@ status="${resp##*$'\n'}"
 payload="${resp%$'\n'*}"
 
 if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
-  echo "error: upload failed (HTTP $status): $payload" >&2
+  echo "error: sync failed (HTTP $status): $payload" >&2
   exit 1
 fi
 

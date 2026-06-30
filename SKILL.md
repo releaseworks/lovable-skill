@@ -104,18 +104,20 @@ rule* above (tell the user what was missing and to open a support request). Do
 Use exactly the values returned. Keep them in memory only; **do not commit
 `token` or `callback_token`.** (Requires `curl` and `jq`.)
 
-### 3. Add the Edge function to the project
+### 3. Add the Edge functions to the project
 
-Create these files **verbatim** from this skill's `assets/rw-backup/` directory:
+Create these files **verbatim** from this skill's `assets/` directory:
 
 - `supabase/functions/rw-backup/index.ts`
 - `supabase/functions/rw-backup/auth.ts`
 - `supabase/functions/rw-backup/introspect.ts`
+- `supabase/functions/rw-sync/index.ts`
 
-Do not modify them — they implement the exact request-authentication contract
-the Releaseworks backend requires (see `reference/edge-function-contract.md`).
+Do not modify them. `rw-backup` lets Releaseworks pull backups (see
+`reference/edge-function-contract.md`); `rw-sync` relays codebase uploads (see
+*Send the codebase* below).
 
-### 4. Set the function's secrets in Supabase
+### 4. Set the functions' secrets in Supabase
 
 Set these as Supabase secrets (project secrets / Edge function env), **not** in
 the repo:
@@ -124,14 +126,21 @@ the repo:
 - `RW_TOKEN` = `token`
 - `RW_PUBLIC_KEY` = `public_key`
 
-### 5. Deploy the function
+Both functions read `RW_SOURCE_ID`/`RW_TOKEN`; `rw-backup` also uses
+`RW_PUBLIC_KEY`.
 
-Deploy `rw-backup` **with JWT verification disabled** — Releaseworks
-authenticates with its own bearer-token + signature scheme, not a Supabase user
-JWT. (CLI equivalent: `supabase functions deploy rw-backup --no-verify-jwt`.)
+### 5. Deploy the functions
 
-The deployed URL will be:
-`https://<project-ref>.supabase.co/functions/v1/rw-backup`
+Deploy both:
+
+- `rw-backup` **with JWT verification disabled** — Releaseworks authenticates
+  with its own bearer-token + signature scheme, not a Supabase JWT.
+  (`supabase functions deploy rw-backup --no-verify-jwt`)
+- `rw-sync` **with JWT verification ON** (the default — do *not* pass
+  `--no-verify-jwt`) — the local sync script calls it with the project's anon
+  key, which Supabase validates. (`supabase functions deploy rw-sync`)
+
+The `rw-backup` URL is `https://<project-ref>.supabase.co/functions/v1/rw-backup`.
 
 ### 6. Report the function URL back to Releaseworks
 
@@ -154,19 +163,23 @@ manage schedules and download backups in the Releaseworks dashboard.
 ## Send the codebase for analysis
 
 Use this when the user asks to **send / upload / analyze their codebase** with
-Releaseworks. It's independent of the onboarding steps above, but needs the
-project's Releaseworks config from onboarding: `RW_SOURCE_ID` and `RW_TOKEN`.
-(The backend defaults to `https://api.prod.releaseworks.ai`; set `RW_BACKEND`
-only to override it.)
+Releaseworks, including re-syncing a new version. The script packages the
+codebase and POSTs it to the project's **`rw-sync` Edge function**, which holds
+the Releaseworks credentials and relays the upload — so the script needs **no
+Releaseworks secret**, only the project's own Supabase config. This means
+**subsequent syncs are just re-running the script.**
 
-1. Ensure `RW_SOURCE_ID` and `RW_TOKEN` are available (from the project's
-   Releaseworks / Supabase config). If they aren't, the project hasn't been
-   onboarded yet — run the setup steps above first.
+Requires setup to have been done (so `rw-sync` is deployed and
+`RW_SOURCE_ID`/`RW_TOKEN` secrets are set). If it hasn't, run *Setup* first.
+
+1. Get the project's Supabase config (these are project-local, **not**
+   Releaseworks secrets): `SUPABASE_URL` and the **anon key**
+   (`SUPABASE_ANON_KEY`). They're in the project's Supabase settings / env.
 2. Run the script — it packages the codebase (via `git archive`, honouring
-   `.gitignore`) and uploads it:
+   `.gitignore`) and sends it through `rw-sync`:
 
    ```
-   RW_SOURCE_ID="<source_id>" RW_TOKEN="<token>" scripts/send-codebase.sh
+   SUPABASE_URL="<url>" SUPABASE_ANON_KEY="<anon key>" scripts/send-codebase.sh
    ```
 
 3. It prints the snapshot JSON (`snapshot_id`, `file_count`, `size_bytes`). Tell
@@ -178,11 +191,12 @@ only to override it.)
 Use this when the user asks to **remove / uninstall / disconnect Releaseworks**
 or **stop backups** for the project. It undoes what onboarding set up.
 
-1. Delete the deployed Edge function (CLI equivalent:
-   `supabase functions delete rw-backup`).
-2. Unset the Supabase secrets it used (CLI equivalent:
+1. Delete the deployed Edge functions (CLI equivalent:
+   `supabase functions delete rw-backup` and `supabase functions delete rw-sync`).
+2. Unset the Supabase secrets they used (CLI equivalent:
    `supabase secrets unset RW_SOURCE_ID RW_TOKEN RW_PUBLIC_KEY`).
-3. Delete `supabase/functions/rw-backup/` from the project.
+3. Delete `supabase/functions/rw-backup/` and `supabase/functions/rw-sync/` from
+   the project.
 4. Tell the user to finish in the Releaseworks dashboard: **disable/delete the
    backup source** (this stops scheduled backups and, if wanted, removes stored
    backups) and unlink the project from monitoring. The skill can't do this —

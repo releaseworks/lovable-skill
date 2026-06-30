@@ -25,6 +25,7 @@ check() { # check "description" -- <command...>
   fi
 }
 has() { grep -qF -- "$2" "$1"; }      # literal substring in file
+not_has() { ! grep -qF -- "$2" "$1"; } # literal substring absent from file
 hasre() { grep -qE -- "$2" "$1"; }    # regex in file
 line_of() { grep -nF -- "$2" "$1" | head -1 | cut -d: -f1; }
 
@@ -89,10 +90,19 @@ for s in scripts/link-project.sh scripts/report-backup-configured.sh scripts/sen
   check "$s is strict (set -euo pipefail)" -- has "$s" 'set -euo pipefail'
 done
 
-# Codebase upload guardrails.
+# Codebase sync: script -> rw-sync edge fn -> backend.
 check "send-codebase.sh excludes .env" -- has scripts/send-codebase.sh .env
 check "send-codebase.sh caps size" -- has scripts/send-codebase.sh MAX_BYTES
-check "send-codebase.sh POSTs the ingest endpoint" -- has scripts/send-codebase.sh /v1/code/snapshots
+check "send-codebase.sh targets the rw-sync function" -- has scripts/send-codebase.sh rw-sync
+check "send-codebase.sh authenticates with the anon key" -- has scripts/send-codebase.sh SUPABASE_ANON_KEY
+check "send-codebase.sh does NOT carry a Releaseworks token" -- not_has scripts/send-codebase.sh RW_TOKEN
+
+# rw-sync relay function holds the secret and relays to the backend.
+RW_SYNC=assets/rw-sync/index.ts
+check "rw-sync reads RW_TOKEN" -- has "$RW_SYNC" RW_TOKEN
+check "rw-sync reads RW_SOURCE_ID" -- has "$RW_SYNC" RW_SOURCE_ID
+check "rw-sync relays to the ingest endpoint" -- has "$RW_SYNC" /v1/code/snapshots
+check "SKILL.md deploys rw-sync" -- has "$SKILL" 'functions deploy rw-sync'
 
 echo
 if [ "$fails" -ne 0 ]; then
