@@ -38,9 +38,10 @@ Deno.serve(async (req) => {
       const table = url.searchParams.get("table");
       const limit = Number(url.searchParams.get("limit"));
       const after = url.searchParams.get("after");
+      const schema = url.searchParams.get("schema") || "public";
       if (!table || !limit) return err(400, "bad_request", "table and limit are required");
-      const page = await fetchPage(table, after, limit);
-      if (page === null) return err(404, "table_not_found", `no such table: ${table}`);
+      const page = await fetchPage(schema, table, after, limit);
+      if (page === null) return err(404, "table_not_found", `no such table: ${schema}.${table}`);
       return json(page);
     }
     return err(404, "bad_request", "unknown route");

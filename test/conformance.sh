@@ -66,6 +66,15 @@ check "contract documents the 300s window" -- has "$CONTRACT" 300
 check "exposes /schema" -- has "$INDEX" 'route === "/schema"'
 check "exposes /data" -- has "$INDEX" 'route === "/data"'
 
+# Auth-schema backup: introspect.ts backs up auth.users + auth.identities, is
+# schema-aware, gates /data to an allowlist, and guards topoSort against phantoms.
+INTROSPECT=assets/rw-backup/introspect.ts
+check "introspect backs up auth.users + identities" -- has "$INTROSPECT" 'AUTH_TABLES = ["users", "identities"]'
+check "introspect gates /data to an allowlist (isAllowed)" -- has "$INTROSPECT" 'function isAllowed'
+check "fetchPage gates by the allowlist" -- has "$INTROSPECT" 'isAllowed(schema, table)'
+check "index.ts passes schema to fetchPage" -- has "$INDEX" 'fetchPage(schema, table'
+check "topoSort guards against unknown ref tables" -- has "$INTROSPECT" 'deps.has(ref_table)'
+
 # SKILL.md essentials.
 check "SKILL.md has a releaseworks name in frontmatter" -- hasre "$SKILL" '^name:[[:space:]]*releaseworks'
 check "SKILL.md has a description" -- hasre "$SKILL" '^description:'

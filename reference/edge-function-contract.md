@@ -19,9 +19,16 @@ backend extract a logical backup of the project's `public` schema.
   function never initiates calls to the backend.
 - **Privilege:** runs with the Supabase **service role** (bypasses RLS) but is
   **read-only** — it only ever issues `SELECT` / catalog queries.
-- **Scope (v1):** `public` schema only — table DDL + row data. No storage
-  buckets, no `auth.*`, no secrets, no Edge function source. (See backup-scope
-  decision.)
+- **Scope:** the `public` schema (table DDL + row data) **plus** a fixed
+  allowlist of auth tables — `auth.users` and `auth.identities` — backed up
+  **data-only** (no DDL; their schema is managed by Supabase/GoTrue and already
+  exists on any restore target). Enough to restore email + OAuth/social logins.
+  Excludes ephemeral auth tables (`sessions`, `refresh_tokens`, `mfa_challenges`,
+  `flow_state`, …), storage buckets, other `auth.*`/secrets, and Edge function
+  source. (See backup-scope decision.)
+- **Sensitivity:** because `auth.users` includes password hashes
+  (`encrypted_password`), dumps are sensitive — they are stored in S3 with
+  bucket-default server-side encryption.
 
 Because this endpoint can read the entire database, its authentication is
 defense-in-depth: **every request must pass both a per-source bearer token and
@@ -113,14 +120,15 @@ extraction.
   "schema_version": 1,
   "source_id": "src_a1b2c3",
   "generated_at": "2026-06-23T03:00:00Z",
-  "restore_order": ["users", "projects", "tasks"],
+  "restore_order": ["users", "profiles", "tasks"],
   "tables": [
     {
-      "name": "users",
+      "name": "profiles",
+      "schema": "public",
       "primary_key": ["id"],
-      "create_ddl": "CREATE TABLE public.users (...);",
+      "create_ddl": "CREATE TABLE public.profiles (...);",
       "post_ddl": ["CREATE INDEX ...;", "ALTER TABLE ... ADD CONSTRAINT ... FOREIGN KEY ...;"],
-      "fk_dependencies": [],
+      "fk_dependencies": ["users"],
       "columns": [
         { "name": "id",         "pg_type": "uuid",        "encoding": "text" },
         { "name": "email",      "pg_type": "text",        "encoding": "text" },
@@ -135,13 +143,18 @@ extraction.
 ```
 
 Notes:
-- `restore_order` is a FK-safe topological order of table creation/insertion.
-  Foreign-key constraints are emitted as `post_ddl` (applied after all data) so
-  that the eventually-consistent, possibly-cross-table-inconsistent dump (see
-  consistency decision) can still load; the manifest records the inconsistency
-  window for the restorer.
+- `schema` is the table's Postgres schema (`public` or `auth`). It defaults to
+  `public` when absent (older deployments).
+- `restore_order` is a FK-safe topological order of table creation/insertion;
+  every entry has a matching `tables` member (auth.users sorts before tables that
+  FK to it). Foreign-key constraints are emitted as `post_ddl` (applied after all
+  data) so that the eventually-consistent, possibly-cross-table-inconsistent dump
+  (see consistency decision) can still load; the manifest records the
+  inconsistency window for the restorer.
 - `create_ddl` covers columns + PK + NOT NULL/defaults. Indexes and FKs go in
-  `post_ddl`.
+  `post_ddl`. For **data-only** auth tables (`auth.users`, `auth.identities`)
+  `create_ddl` is `null` and `post_ddl` is empty — the backend inserts rows into
+  the existing tables (with `ON CONFLICT DO NOTHING`) rather than recreating them.
 - `encoding` tells the backend how each value is JSON-encoded in `/data` (see
   §5). This is how we preserve type fidelity through JSON.
 
@@ -154,6 +167,7 @@ Keyset-paginated row extraction for one table.
 | Param | Required | Description |
 |---|---|---|
 | `table` | yes | Table name from `/schema`. |
+| `schema` | no  | Table schema from `/schema` (`public` default, or `auth`). Gated to the same allowlist as `/schema`. |
 | `after` | no  | Last primary-key value from the previous page. Omit for the first page. |
 | `limit` | yes | Max rows to return (backend sets fixed v1 page size, e.g. 500). |
 

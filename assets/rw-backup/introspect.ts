@@ -1,9 +1,24 @@
-// Read-only schema + data introspection over the project's public schema.
-// Only SELECT/catalog queries are ever issued. See the contract, §4–5.
+// Read-only schema + data introspection over the project's public schema, plus
+// a fixed allowlist of auth tables (auth.users, auth.identities) so user records
+// and their linked identities are backed up. Only SELECT/catalog queries are
+// ever issued. See the contract, §4–5.
 
 import { Pool } from "https://deno.land/x/postgres@v0.19.3/mod.ts";
 
 const pool = new Pool(Deno.env.get("SUPABASE_DB_URL")!, 3, true);
+
+// The only non-public tables we back up. auth.* is managed by Supabase/GoTrue,
+// so these are DATA-ONLY (no CREATE/indexes/constraints emitted): we insert rows
+// into the tables that already exist on any Supabase restore target. Ephemeral
+// auth tables (sessions, refresh_tokens, mfa_challenges, flow_state, …) are
+// excluded on purpose.
+const AUTH_TABLES = ["users", "identities"];
+
+// (schema, table) is allowed for data extraction iff it's a public BASE TABLE or
+// one of the auth allowlist tables. Keeps /data from becoming an arbitrary reader.
+function isAllowed(schema: string, table: string): boolean {
+  return schema === "public" || (schema === "auth" && AUTH_TABLES.includes(table));
+}
 
 async function query<T = Record<string, unknown>>(sql: string, args: unknown[] = []): Promise<T[]> {
   const c = await pool.connect();
@@ -25,6 +40,7 @@ const q = (id: string) => `"${id.replace(/"/g, '""')}"`;
 
 export async function buildSchema(sourceId: string) {
   const cols = await query<{
+    table_schema: string;
     table_name: string;
     column_name: string;
     data_type: string;
@@ -32,24 +48,30 @@ export async function buildSchema(sourceId: string) {
     is_nullable: string;
     column_default: string | null;
   }>(`
-    SELECT c.table_name, c.column_name, c.data_type, c.udt_name,
+    SELECT c.table_schema, c.table_name, c.column_name, c.data_type, c.udt_name,
            c.is_nullable, c.column_default
     FROM information_schema.columns c
     JOIN information_schema.tables t
       ON t.table_schema = c.table_schema AND t.table_name = c.table_name
-    WHERE c.table_schema = 'public' AND t.table_type = 'BASE TABLE'
-    ORDER BY c.table_name, c.ordinal_position
+    WHERE t.table_type = 'BASE TABLE'
+      AND (c.table_schema = 'public'
+           OR (c.table_schema = 'auth' AND c.table_name IN ('users', 'identities')))
+    ORDER BY c.table_schema, c.table_name, c.ordinal_position
   `);
 
-  const pks = await query<{ table_name: string; column_name: string }>(`
-    SELECT tc.table_name, kcu.column_name
+  const pks = await query<{ table_schema: string; table_name: string; column_name: string }>(`
+    SELECT tc.table_schema, tc.table_name, kcu.column_name
     FROM information_schema.table_constraints tc
     JOIN information_schema.key_column_usage kcu
       ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
-    WHERE tc.table_schema = 'public' AND tc.constraint_type = 'PRIMARY KEY'
+    WHERE tc.constraint_type = 'PRIMARY KEY'
+      AND (tc.table_schema = 'public'
+           OR (tc.table_schema = 'auth' AND tc.table_name IN ('users', 'identities')))
     ORDER BY kcu.ordinal_position
   `);
 
+  // Indexes/constraints/FKs are only emitted for public tables; auth.* is
+  // data-only (managed by Supabase), so it gets no DDL.
   const indexes = await query<{ tablename: string; indexdef: string }>(`
     SELECT tablename, indexdef FROM pg_indexes WHERE schemaname = 'public'
   `);
@@ -69,15 +91,28 @@ export async function buildSchema(sourceId: string) {
     WHERE ns.nspname = 'public' AND con.contype = 'f'
   `);
 
-  const tableNames = [...new Set(cols.map((c) => c.table_name))];
-  const pkByTable = new Map<string, string[]>();
-  for (const { table_name, column_name } of pks) {
-    pkByTable.set(table_name, [...(pkByTable.get(table_name) ?? []), column_name]);
+  // Unique table identity is (schema, name); the contract `name` stays bare and
+  // gains a `schema` field. Names don't collide across our public+auth set.
+  const ids: { schema: string; name: string }[] = [];
+  const seenIds = new Set<string>();
+  for (const c of cols) {
+    const key = `${c.table_schema}.${c.table_name}`;
+    if (!seenIds.has(key)) {
+      seenIds.add(key);
+      ids.push({ schema: c.table_schema, name: c.table_name });
+    }
   }
 
-  const tables = tableNames.map((name) => {
-    const tcols = cols.filter((c) => c.table_name === name);
-    const pk = pkByTable.get(name) ?? [];
+  const pkByTable = new Map<string, string[]>();
+  for (const { table_schema, table_name, column_name } of pks) {
+    const key = `${table_schema}.${table_name}`;
+    pkByTable.set(key, [...(pkByTable.get(key) ?? []), column_name]);
+  }
+
+  const tables = ids.map(({ schema, name }) => {
+    const isAuth = schema === "auth";
+    const tcols = cols.filter((c) => c.table_schema === schema && c.table_name === name);
+    const pk = pkByTable.get(`${schema}.${name}`) ?? [];
     const columnDefs = tcols.map((c) => {
       const type = c.data_type === "ARRAY" ? c.udt_name.replace(/^_/, "") + "[]" : c.data_type;
       let def = `${q(c.column_name)} ${type}`;
@@ -87,21 +122,29 @@ export async function buildSchema(sourceId: string) {
     });
     if (pk.length) columnDefs.push(`PRIMARY KEY (${pk.map(q).join(", ")})`);
 
-    const post_ddl = [
-      ...indexes
-        .filter((i) => i.tablename === name && !/_pkey/.test(i.indexdef))
-        .map((i) => i.indexdef + ";"),
-      ...constraints
-        .filter((c) => c.table_name === name)
-        .map((c) => `ALTER TABLE public.${q(name)} ADD ${c.def};`),
-    ];
+    // auth.* is data-only: no CREATE / indexes / constraints.
+    const post_ddl = isAuth
+      ? []
+      : [
+          ...indexes
+            .filter((i) => i.tablename === name && !/_pkey/.test(i.indexdef))
+            .map((i) => i.indexdef + ";"),
+          ...constraints
+            .filter((c) => c.table_name === name)
+            .map((c) => `ALTER TABLE public.${q(name)} ADD ${c.def};`),
+        ];
 
     return {
       name,
+      schema,
       primary_key: pk,
-      create_ddl: `CREATE TABLE public.${q(name)} (\n  ${columnDefs.join(",\n  ")}\n);`,
+      create_ddl: isAuth
+        ? null
+        : `CREATE TABLE public.${q(name)} (\n  ${columnDefs.join(",\n  ")}\n);`,
       post_ddl,
-      fk_dependencies: fks.filter((f) => f.table_name === name).map((f) => f.ref_table),
+      fk_dependencies: isAuth
+        ? []
+        : fks.filter((f) => f.table_name === name).map((f) => f.ref_table),
       columns: tcols.map((c) => ({
         name: c.column_name,
         pg_type: c.data_type === "ARRAY" ? c.udt_name.replace(/^_/, "") + "[]" : c.udt_name,
@@ -115,7 +158,10 @@ export async function buildSchema(sourceId: string) {
     schema_version: 1,
     source_id: sourceId,
     generated_at: new Date().toISOString(),
-    restore_order: topoSort(tableNames, fks),
+    restore_order: topoSort(
+      ids.map((t) => t.name),
+      fks,
+    ),
     tables,
   };
 }
@@ -123,7 +169,12 @@ export async function buildSchema(sourceId: string) {
 function topoSort(names: string[], fks: { table_name: string; ref_table: string }[]): string[] {
   const deps = new Map<string, Set<string>>(names.map((n) => [n, new Set()]));
   for (const { table_name, ref_table } of fks) {
-    if (table_name !== ref_table && deps.has(table_name)) deps.get(table_name)!.add(ref_table);
+    // Only record a dependency when BOTH tables are enumerated. A FK to a table
+    // we don't back up (e.g. a cross-schema ref to an excluded auth table) must
+    // not leak a phantom node into restore_order.
+    if (table_name !== ref_table && deps.has(table_name) && deps.has(ref_table)) {
+      deps.get(table_name)!.add(ref_table);
+    }
   }
   const out: string[] = [];
   const seen = new Set<string>();
@@ -139,11 +190,20 @@ function topoSort(names: string[], fks: { table_name: string; ref_table: string 
   return out;
 }
 
-export async function fetchPage(table: string, after: string | null, limit: number) {
+export async function fetchPage(
+  schema: string,
+  table: string,
+  after: string | null,
+  limit: number,
+) {
+  // Gate to the same allowlist as buildSchema so /data can't read arbitrary
+  // schemas/tables.
+  if (!isAllowed(schema, table)) return null;
+
   const exists = await query<{ ok: boolean }>(
     `SELECT true AS ok FROM information_schema.tables
-     WHERE table_schema='public' AND table_type='BASE TABLE' AND table_name = $1`,
-    [table],
+     WHERE table_schema=$1 AND table_type='BASE TABLE' AND table_name = $2`,
+    [schema, table],
   );
   if (!exists.length) return null;
 
@@ -151,20 +211,20 @@ export async function fetchPage(table: string, after: string | null, limit: numb
     `SELECT kcu.column_name
      FROM information_schema.table_constraints tc
      JOIN information_schema.key_column_usage kcu
-       ON tc.constraint_name = kcu.constraint_name
-     WHERE tc.table_schema='public' AND tc.constraint_type='PRIMARY KEY'
-       AND tc.table_name = $1
+       ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
+     WHERE tc.table_schema=$1 AND tc.constraint_type='PRIMARY KEY'
+       AND tc.table_name = $2
      ORDER BY kcu.ordinal_position`,
-    [table],
+    [schema, table],
   );
-  if (!pks.length) throw new Error(`table ${table} has no primary key`);
+  if (!pks.length) throw new Error(`table ${schema}.${table} has no primary key`);
 
   const pkCols = pks.map((p) => p.column_name);
   const orderBy = pkCols.map(q).join(", ");
   const where = after !== null ? `WHERE ${q(pkCols[0])} > $1` : "";
   const args = after !== null ? [after] : [];
   const rows = await query(
-    `SELECT * FROM public.${q(table)} ${where} ORDER BY ${orderBy} LIMIT ${Number(limit)}`,
+    `SELECT * FROM ${q(schema)}.${q(table)} ${where} ORDER BY ${orderBy} LIMIT ${Number(limit)}`,
     args,
   );
 
