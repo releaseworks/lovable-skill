@@ -82,6 +82,8 @@ check "SKILL.md sets RW_SOURCE_ID" -- has "$SKILL" RW_SOURCE_ID
 check "SKILL.md sets RW_TOKEN" -- has "$SKILL" RW_TOKEN
 check "SKILL.md sets RW_PUBLIC_KEY" -- has "$SKILL" RW_PUBLIC_KEY
 check "SKILL.md calls out disabling JWT verify" -- hasre "$SKILL" '(no-verify-jwt|JWT verification)'
+check "SKILL.md makes verify_jwt durable via config.toml" -- has "$SKILL" 'verify_jwt = false'
+check "SKILL.md names config.toml for the JWT gate" -- has "$SKILL" 'config.toml'
 check "SKILL.md POSTs the link-project hook" -- has "$SKILL" link-project
 check "SKILL.md reports back with callback_token" -- has "$SKILL" callback_token
 check "SKILL.md forbids inventing values" -- has "$SKILL" 'never invent values'

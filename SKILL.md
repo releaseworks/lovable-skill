@@ -131,7 +131,21 @@ Both functions read `RW_SOURCE_ID`/`RW_TOKEN`; `rw-backup` also uses
 
 ### 5. Deploy the functions
 
-Deploy both:
+First make the JWT-verification setting **durable** by ensuring
+`supabase/config.toml` contains these blocks (merge into the existing file — do
+**not** overwrite it):
+
+```toml
+[functions.rw-backup]
+verify_jwt = false
+
+[functions.rw-sync]
+verify_jwt = true
+```
+
+This is what survives future redeploys. The `--no-verify-jwt` CLI flag is only a
+one-shot equivalent and is **not** reapplied on later deploys, so config.toml is
+the source of truth. Then deploy both:
 
 - `rw-backup` **with JWT verification disabled** — Releaseworks authenticates
   with its own bearer-token + signature scheme, not a Supabase JWT.
@@ -139,6 +153,9 @@ Deploy both:
 - `rw-sync` **with JWT verification ON** (the default — do *not* pass
   `--no-verify-jwt`) — the local sync script calls it with the project's anon
   key, which Supabase validates. (`supabase functions deploy rw-sync`)
+
+If you edit `config.toml` after a function is already deployed, **redeploy** for
+it to take effect.
 
 The `rw-backup` URL is `https://<project-ref>.supabase.co/functions/v1/rw-backup`.
 
@@ -216,8 +233,12 @@ stops scheduling and cleans up the Releaseworks side.
 - Never write `link_token`, `token`, `callback_token`, or `public_key` into the
   repository, comments, or commit messages. Secrets go only into Supabase
   secrets.
-- Deploy with JWT verification **off** — with it on, every Releaseworks request
-  is rejected before reaching the function.
+- Deploy `rw-backup` with JWT verification **off**, set durably via
+  `supabase/config.toml` (`[functions.rw-backup] verify_jwt = false`) — with it
+  on, every Releaseworks request is rejected by the Supabase gateway before
+  reaching the function. If a backup fails with `UNAUTHORIZED_INVALID_JWT_FORMAT`
+  / "Invalid JWT", that's this: set `verify_jwt = false` in config.toml and
+  redeploy `rw-backup`.
 - Copy the `assets/rw-backup/` files unchanged.
 - The codebase upload must never include secrets — `send-codebase.sh` excludes
   `.env` files; don't override that.
