@@ -44,8 +44,11 @@ step failed and the error; do not continue.
 Collect from this Lovable project:
 
 - `lovable_project_id` — the project's ID
-- `name` — the project's name
-- `primary_domain` — the primary published domain (e.g. `https://myapp.lovable.app`)
+- `name` — the project's **display name** (the human-readable title), not the
+  URL slug
+- `primary_domain` — the published domain. **Prefer a custom domain** (e.g.
+  `https://app.acme.com`) whenever the project has one; only fall back to the
+  `*.lovable.app` domain if there is no custom domain.
 
 ### 2. Link the project and get backup credentials
 
