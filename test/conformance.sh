@@ -75,6 +75,11 @@ check "SKILL.md calls out disabling JWT verify" -- hasre "$SKILL" '(no-verify-jw
 check "SKILL.md POSTs the link-project hook" -- has "$SKILL" link-project
 check "SKILL.md reports back with callback_token" -- has "$SKILL" callback_token
 
+# Removal capability.
+check "SKILL.md documents removing the integration" -- hasre "$SKILL" 'Remove the Releaseworks integration'
+check "SKILL.md deletes the edge function on removal" -- has "$SKILL" 'functions delete rw-backup'
+check "SKILL.md unsets the secrets on removal" -- has "$SKILL" 'secrets unset'
+
 # Deterministic scripts, referenced by SKILL.md and strict bash.
 for s in scripts/link-project.sh scripts/report-backup-configured.sh scripts/send-codebase.sh; do
   check "SKILL.md invokes $s" -- has "$SKILL" "$s"

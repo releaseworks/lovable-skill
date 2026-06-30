@@ -1,32 +1,43 @@
 ---
-name: releaseworks-setup
+name: releaseworks
 description: >-
-  Set up Releaseworks for a Lovable project: link it for availability
-  monitoring, configure automated database backups by deploying the rw-backup
-  Supabase Edge function, and send the codebase to Releaseworks for analysis.
-  Use when a user wants to connect their Lovable/Supabase project to
-  Releaseworks, enable backups, send/analyze their codebase, or pastes a
-  Releaseworks link_token.
+  Manage the Releaseworks integration for a Lovable project — both initial setup
+  and ongoing use. Set up: link for availability monitoring and deploy the
+  rw-backup Supabase Edge function for automated backups. Ongoing: send new
+  versions of the codebase to Releaseworks for analysis. Also removes the
+  integration. Use when a user wants to connect their Lovable/Supabase project to
+  Releaseworks, enable backups, send/analyze their codebase, remove/disconnect
+  Releaseworks, or pastes a Releaseworks link_token.
 ---
 
-# Releaseworks setup
+# Releaseworks
 
-This skill links a Lovable project to Releaseworks (availability monitoring) and
-configures automated backups in one task. You (the agent) perform the work — you
-have access to this project's Supabase; Releaseworks does not.
+This skill manages a Lovable project's Releaseworks integration — both **setup**
+and **ongoing use**. You (the agent) perform the work, since you have access to
+this project's Supabase; Releaseworks does not.
 
-## Inputs
+What it covers:
 
-- `link_token` — provided in the user's prompt (looks like `rlw_live_…`).
-  **Treat it as a secret: never write it into the codebase.**
+- **Set up** — link the project (availability monitoring) and deploy the
+  `rw-backup` Edge function for automated backups (one task; see below).
+- **Send code for analysis** — package and upload the current codebase; run this
+  again whenever you want Releaseworks to analyze a new version.
+- **Remove** — uninstall the integration.
 
-If the user didn't provide a `link_token`, ask them to copy the setup prompt
-from Releaseworks (Settings → Connect Lovable) and paste it.
+Pick the matching section below based on what the user asks for. The first-time
+setup is the **Setup** steps; the others are independent and reusable.
 
-## Steps
+## Setup
 
-Do these in order. If a step fails, stop and tell the user exactly which step
-failed and the error; do not continue.
+Run this the first time a user connects a project (or pastes a `link_token`).
+
+**Input:** `link_token` — provided in the user's prompt (looks like
+`rlw_live_…`). **Treat it as a secret: never write it into the codebase.** If the
+user didn't provide one, ask them to copy the setup prompt from Releaseworks
+(Settings → Connect Lovable) and paste it.
+
+Do these steps in order. If a step fails, stop and tell the user exactly which
+step failed and the error; do not continue.
 
 ### 1. Gather project metadata
 
@@ -130,6 +141,25 @@ only to override it.)
 3. It prints the snapshot JSON (`snapshot_id`, `file_count`, `size_bytes`). Tell
    the user the codebase was sent and can be viewed/analyzed in Releaseworks. The
    script exits non-zero with the error on failure — if so, stop and report it.
+
+## Remove the Releaseworks integration
+
+Use this when the user asks to **remove / uninstall / disconnect Releaseworks**
+or **stop backups** for the project. It undoes what onboarding set up.
+
+1. Delete the deployed Edge function (CLI equivalent:
+   `supabase functions delete rw-backup`).
+2. Unset the Supabase secrets it used (CLI equivalent:
+   `supabase secrets unset RW_SOURCE_ID RW_TOKEN RW_PUBLIC_KEY`).
+3. Delete `supabase/functions/rw-backup/` from the project.
+4. Tell the user to finish in the Releaseworks dashboard: **disable/delete the
+   backup source** (this stops scheduled backups and, if wanted, removes stored
+   backups) and unlink the project from monitoring. The skill can't do this —
+   it's a Releaseworks-side action behind the user's account.
+
+Report each step's outcome; if a step fails, say which and stop. Removing the
+function and secrets is enough to stop Releaseworks reaching the database; step 4
+stops scheduling and cleans up the Releaseworks side.
 
 ## Guardrails
 

@@ -1,18 +1,24 @@
-# releaseworks-skill
+# releaseworks
 
-An **installable Agent Skill** that sets up Releaseworks on a Lovable project in
-one step: it links the project for availability monitoring **and** configures
-automated database backups by deploying the `rw-backup` Supabase Edge function.
+The **Releaseworks Agent Skill** (skill name: `releaseworks`) — it manages a
+Lovable project's Releaseworks integration end to end, both initial setup and
+ongoing use:
+
+- **Set up** — link the project for availability monitoring **and** deploy the
+  `rw-backup` Supabase Edge function for automated backups, in one task.
+- **Send code for analysis** — package and upload the current codebase; re-run
+  any time to analyze a new version.
+- **Remove** — uninstall the integration (delete the function + secrets).
 
 The skill is executed by the Lovable agent — Lovable has access to the project's
-Supabase, so it creates the function, sets the secrets, and deploys. Releaseworks
+Supabase, so it creates the function, sets secrets, and deploys. Releaseworks
 itself never touches the customer's database.
 
-## How it's used
+## Setup flow
 
 The user copies a short setup prompt from Releaseworks (Settings → Connect
 Lovable) that contains a `link_token` and tells Lovable to run this skill.
-Lovable then follows [`SKILL.md`](SKILL.md):
+Lovable then follows the **Setup** steps in [`SKILL.md`](SKILL.md):
 
 1. Collect the project's id / name / primary domain.
 2. `POST /api/public/hooks/link-project` → links the project and returns the
@@ -26,6 +32,9 @@ Lovable then follows [`SKILL.md`](SKILL.md):
 
 The only secret the user handles is the short-lived `link_token`. The per-source
 `token` flows machine-to-machine into Supabase secrets and is never committed.
+
+Ongoing actions (sending code, removing the integration) are separate sections in
+[`SKILL.md`](SKILL.md) and reuse the same per-project config.
 
 ## What's in here
 
