@@ -113,6 +113,9 @@ Create these files **verbatim** from this skill's `assets/` directory:
 - `supabase/functions/rw-backup/introspect.ts`
 - `supabase/functions/rw-sync/index.ts`
 
+Also merge `assets/config.toml` into the project's repo-root
+`supabase/config.toml` (the per-function JWT settings — see step 5).
+
 Do not modify them. `rw-backup` lets Releaseworks pull backups (see
 `reference/edge-function-contract.md`); `rw-sync` relays codebase uploads (see
 *Send the codebase* below).
@@ -131,9 +134,9 @@ Both functions read `RW_SOURCE_ID`/`RW_TOKEN`; `rw-backup` also uses
 
 ### 5. Deploy the functions
 
-First make the JWT-verification setting **durable** by ensuring
-`supabase/config.toml` contains these blocks (merge into the existing file — do
-**not** overwrite it):
+First make the JWT-verification setting **durable** by merging the bundled
+`assets/config.toml` blocks into the project's repo-root `supabase/config.toml`
+(merge — do **not** overwrite the existing file):
 
 ```toml
 [functions.rw-backup]
@@ -143,9 +146,12 @@ verify_jwt = false
 verify_jwt = true
 ```
 
-This is what survives future redeploys. The `--no-verify-jwt` CLI flag is only a
-one-shot equivalent and is **not** reapplied on later deploys, so config.toml is
-the source of truth. Then deploy both:
+This is the source of truth and is re-applied on **every** deploy — it's what
+survives redeploys. The `--no-verify-jwt` CLI flag is only a one-shot equivalent
+and is **not** reapplied on later function updates (Supabase CLI #4059), so a
+later redeploy without this block silently re-enables the JWT gate and breaks
+backups. Commit the `supabase/config.toml` change so it's part of the deployed
+tree. Then deploy both:
 
 - `rw-backup` **with JWT verification disabled** — Releaseworks authenticates
   with its own bearer-token + signature scheme, not a Supabase JWT.

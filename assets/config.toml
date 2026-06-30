@@ -1,0 +1,18 @@
+# Releaseworks edge-function config — MERGE these blocks into the project's
+# repo-root `supabase/config.toml` (do not overwrite the file).
+#
+# On Lovable Cloud / Supabase, config.toml is the source of truth for per-function
+# JWT verification, and it is re-applied on every deploy. Setting it here is what
+# keeps rw-backup reachable across redeploys — the `--no-verify-jwt` CLI flag is
+# NOT preserved on later function updates (Supabase CLI issue #4059).
+
+# rw-backup authenticates with Releaseworks' own bearer token + ECDSA signature,
+# NOT a Supabase JWT, so the platform JWT gate must be OFF or the gateway rejects
+# every request before the function runs (401 UNAUTHORIZED_INVALID_JWT_FORMAT).
+[functions.rw-backup]
+verify_jwt = false
+
+# rw-sync is called by the local script with the project anon key, so it keeps the
+# default JWT verification ON.
+[functions.rw-sync]
+verify_jwt = true

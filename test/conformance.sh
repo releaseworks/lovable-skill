@@ -84,6 +84,12 @@ check "SKILL.md sets RW_PUBLIC_KEY" -- has "$SKILL" RW_PUBLIC_KEY
 check "SKILL.md calls out disabling JWT verify" -- hasre "$SKILL" '(no-verify-jwt|JWT verification)'
 check "SKILL.md makes verify_jwt durable via config.toml" -- has "$SKILL" 'verify_jwt = false'
 check "SKILL.md names config.toml for the JWT gate" -- has "$SKILL" 'config.toml'
+# Bundled config.toml so every Lovable redeploy carries the JWT-gate setting.
+CONFIG_TOML=assets/config.toml
+check "bundles assets/config.toml" -- test -f "$CONFIG_TOML"
+check "config.toml disables JWT verify for rw-backup" -- hasre "$CONFIG_TOML" 'functions\.rw-backup'
+check "config.toml sets rw-backup verify_jwt = false" -- has "$CONFIG_TOML" 'verify_jwt = false'
+check "config.toml keeps rw-sync verify_jwt = true" -- has "$CONFIG_TOML" 'verify_jwt = true'
 check "SKILL.md POSTs the link-project hook" -- has "$SKILL" link-project
 check "SKILL.md reports back with callback_token" -- has "$SKILL" callback_token
 check "SKILL.md forbids inventing values" -- has "$SKILL" 'never invent values'
