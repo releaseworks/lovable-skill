@@ -76,6 +76,12 @@ check "index.ts passes schema to fetchPage" -- has "$INDEX" 'fetchPage(schema, t
 check "topoSort guards against unknown ref tables" -- has "$INTROSPECT" 'deps.has(ref_table)'
 check "introspect serializes bigint as string" -- has "$INTROSPECT" 'typeof v === "bigint"'
 check "index.ts guards JSON against BigInt" -- has "$INDEX" 'typeof v === "bigint"'
+# Connection pooling: prefer the Supavisor transaction pooler, fall back to a
+# single direct connection, to avoid exhausting DB connection slots.
+check "introspect detects region via SB_REGION" -- has "$INTROSPECT" 'SB_REGION'
+check "introspect targets the Supavisor pooler" -- has "$INTROSPECT" 'pooler.supabase.com'
+check "introspect honors an RW_DB_URL override" -- has "$INTROSPECT" 'RW_DB_URL'
+check "introspect falls back to a single direct connection" -- has "$INTROSPECT" 'direct, 1, true'
 
 # SKILL.md essentials.
 check "SKILL.md has a releaseworks name in frontmatter" -- hasre "$SKILL" '^name:[[:space:]]*releaseworks'

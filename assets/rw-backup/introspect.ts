@@ -5,7 +5,66 @@
 
 import { Pool } from "https://deno.land/x/postgres@v0.19.3/mod.ts";
 
-const pool = new Pool(Deno.env.get("SUPABASE_DB_URL")!, 3, true);
+// Connect through the Supavisor transaction pooler when we can, to avoid
+// exhausting the customer DB's connection slots (direct connections from an edge
+// function are the classic anti-pattern -> "remaining connection slots are
+// reserved for ... SUPERUSER"). The pooler host is
+// aws-<N>-<region>.pooler.supabase.com; the region comes from SB_REGION but the
+// <N> prefix isn't derivable/exposed, so we probe candidates and fall back to a
+// single direct connection.
+//   - RW_DB_URL set                -> use it verbatim (operator-pinned).
+//   - db.<ref>.supabase.co + region -> probe aws-{0,1,2}-<region> pooler URLs.
+//   - otherwise / all probes fail   -> direct SUPABASE_DB_URL, pool size 1.
+const POOLER_PREFIXES = [0, 1, 2];
+
+function poolerUrl(direct: string, ref: string, region: string, n: number): string {
+  const u = new URL(direct);
+  u.hostname = `aws-${n}-${region}.pooler.supabase.com`;
+  u.port = "6543";
+  u.username = `postgres.${ref}`;
+  u.searchParams.set("sslmode", "require");
+  return u.toString();
+}
+
+async function probe(url: string, size: number): Promise<Pool | null> {
+  const p = new Pool(url, size, true);
+  try {
+    const c = await p.connect();
+    try {
+      await c.queryObject("SELECT 1");
+    } finally {
+      c.release();
+    }
+    return p;
+  } catch (_e) {
+    await p.end().catch(() => {});
+    return null;
+  }
+}
+
+async function resolvePool(): Promise<Pool> {
+  const override = Deno.env.get("RW_DB_URL");
+  if (override) return new Pool(override, 2, true);
+
+  const direct = Deno.env.get("SUPABASE_DB_URL")!;
+  const region = Deno.env.get("SB_REGION");
+  const m = new URL(direct).hostname.match(/^db\.([a-z0-9]+)\.supabase\.co$/);
+  if (region && m) {
+    const ref = m[1];
+    for (const n of POOLER_PREFIXES) {
+      const p = await probe(poolerUrl(direct, ref, region, n), 3);
+      if (p) return p;
+    }
+  }
+  // Fallback: direct connection with a minimal footprint.
+  return new Pool(direct, 1, true);
+}
+
+let _poolPromise: Promise<Pool> | null = null;
+function getPool(): Promise<Pool> {
+  if (_poolPromise === null) _poolPromise = resolvePool();
+  return _poolPromise;
+}
 
 // The only non-public tables we back up. auth.* is managed by Supabase/GoTrue,
 // so these are DATA-ONLY (no CREATE/indexes/constraints emitted): we insert rows
@@ -21,6 +80,7 @@ function isAllowed(schema: string, table: string): boolean {
 }
 
 async function query<T = Record<string, unknown>>(sql: string, args: unknown[] = []): Promise<T[]> {
+  const pool = await getPool();
   const c = await pool.connect();
   try {
     const r = await c.queryObject<T>({ text: sql, args });

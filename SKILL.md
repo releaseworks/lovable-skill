@@ -142,6 +142,13 @@ the repo:
 Both functions read `RW_SOURCE_ID`/`RW_TOKEN`; `rw-backup` also uses
 `RW_PUBLIC_KEY`.
 
+`rw-backup` connects to the database through the Supavisor **transaction pooler**
+when it can (auto-detected from `SB_REGION`), and otherwise falls back to a single
+direct connection — this avoids exhausting the project's connection slots during a
+backup. **Optional:** set an `RW_DB_URL` secret to the project's transaction-pooler
+connection string (port 6543) to pin it explicitly (e.g. if auto-detection can't
+determine the pooler host).
+
 ### 5. Deploy the functions
 
 First make the JWT-verification setting **durable** by merging the bundled
@@ -227,7 +234,8 @@ or **stop backups** for the project. It undoes what onboarding set up.
 1. Delete the deployed Edge functions (CLI equivalent:
    `supabase functions delete rw-backup` and `supabase functions delete rw-sync`).
 2. Unset the Supabase secrets they used (CLI equivalent:
-   `supabase secrets unset RW_SOURCE_ID RW_TOKEN RW_PUBLIC_KEY`).
+   `supabase secrets unset RW_SOURCE_ID RW_TOKEN RW_PUBLIC_KEY`, plus `RW_DB_URL`
+   if it was set).
 3. Delete `supabase/functions/rw-backup/` and `supabase/functions/rw-sync/` from
    the project.
 4. Tell the user to finish in the Releaseworks dashboard: **disable/delete the
