@@ -5,6 +5,14 @@
 # JWT verification, and it is re-applied on every deploy. Setting it here is what
 # keeps rw-backup reachable across redeploys — the `--no-verify-jwt` CLI flag is
 # NOT preserved on later function updates (Supabase CLI issue #4059).
+#
+# CRITICAL — FORMAT: these must be FLAT, top-level `[functions.<name>]` tables.
+# Do NOT place them under a bare `[functions]` parent table, e.g.:
+#     [functions]            # ← WRONG: this bare parent makes the deploy
+#     [functions.rw-backup]  #    pipeline SILENTLY IGNORE the overrides below,
+#     verify_jwt = false     #    so rw-backup keeps deploying with verify_jwt=true.
+# If the project's config.toml already has a bare `[functions]` header, remove it
+# (keep the flat `[functions.<name>]` tables), then delete + redeploy the function.
 
 # rw-backup authenticates with Releaseworks' own bearer token + ECDSA signature,
 # NOT a Supabase JWT, so the platform JWT gate must be OFF or the gateway rejects

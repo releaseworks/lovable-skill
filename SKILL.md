@@ -168,7 +168,22 @@ survives redeploys. The `--no-verify-jwt` CLI flag is only a one-shot equivalent
 and is **not** reapplied on later function updates (Supabase CLI #4059), so a
 later redeploy without this block silently re-enables the JWT gate and breaks
 backups. Commit the `supabase/config.toml` change so it's part of the deployed
-tree. Then deploy both:
+tree.
+
+> **Critical — TOML format.** These must be **flat, top-level
+> `[functions.<name>]` tables**. Do **not** add or nest them under a bare
+> `[functions]` parent table:
+> ```toml
+> [functions]            # ← WRONG: a bare parent silently voids the overrides
+> [functions.rw-backup]  #    below, so rw-backup keeps deploying verify_jwt=true
+> verify_jwt = false
+> ```
+> If the project's existing `supabase/config.toml` already has a bare
+> `[functions]` header, **remove that header** (keep the flat
+> `[functions.<name>]` tables). After fixing config.toml, **delete and redeploy**
+> `rw-backup` so its metadata is re-read (an in-place redeploy may not re-read it).
+
+Then deploy both:
 
 - `rw-backup` **with JWT verification disabled** — Releaseworks authenticates
   with its own bearer-token + signature scheme, not a Supabase JWT.
@@ -258,11 +273,13 @@ stops scheduling and cleans up the Releaseworks side.
   repository, comments, or commit messages. Secrets go only into Supabase
   secrets.
 - Deploy `rw-backup` with JWT verification **off**, set durably via
-  `supabase/config.toml` (`[functions.rw-backup] verify_jwt = false`) — with it
-  on, every Releaseworks request is rejected by the Supabase gateway before
-  reaching the function. If a backup fails with `UNAUTHORIZED_INVALID_JWT_FORMAT`
-  / "Invalid JWT", that's this: set `verify_jwt = false` in config.toml and
-  redeploy `rw-backup`.
+  `supabase/config.toml` as a **flat** `[functions.rw-backup] verify_jwt = false`
+  table (never under a bare `[functions]` parent — that silently voids it) — with
+  the gate on, every Releaseworks request is rejected by the Supabase gateway
+  before reaching the function. If a backup fails with
+  `UNAUTHORIZED_INVALID_JWT_FORMAT` / "Invalid JWT", that's this: first check for a
+  bare `[functions]` header in config.toml (remove it), ensure
+  `verify_jwt = false`, then **delete and redeploy** `rw-backup`.
 - Copy the `assets/rw-backup/` files unchanged.
 - The codebase upload must never include secrets — `send-codebase.sh` excludes
   `.env` files; don't override that.

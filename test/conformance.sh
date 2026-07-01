@@ -27,6 +27,7 @@ check() { # check "description" -- <command...>
 has() { grep -qF -- "$2" "$1"; }      # literal substring in file
 not_has() { ! grep -qF -- "$2" "$1"; } # literal substring absent from file
 hasre() { grep -qE -- "$2" "$1"; }    # regex in file
+not_hasre() { ! grep -qE -- "$2" "$1"; } # regex absent from file
 line_of() { grep -nF -- "$2" "$1" | head -1 | cut -d: -f1; }
 
 # Secrets the function/entrypoint read.
@@ -98,6 +99,9 @@ check "bundles assets/config.toml" -- test -f "$CONFIG_TOML"
 check "config.toml disables JWT verify for rw-backup" -- hasre "$CONFIG_TOML" 'functions\.rw-backup'
 check "config.toml sets rw-backup verify_jwt = false" -- has "$CONFIG_TOML" 'verify_jwt = false'
 check "config.toml keeps rw-sync verify_jwt = true" -- has "$CONFIG_TOML" 'verify_jwt = true'
+# Flat tables only: a bare [functions] parent silently voids the per-fn overrides.
+check "config.toml has no bare [functions] parent" -- not_hasre "$CONFIG_TOML" '^\[functions\][[:space:]]*$'
+check "SKILL.md warns against a bare [functions] parent" -- has "$SKILL" 'bare `[functions]`'
 check "SKILL.md POSTs the link-project hook" -- has "$SKILL" link-project
 check "SKILL.md reports back with callback_token" -- has "$SKILL" callback_token
 check "SKILL.md forbids inventing values" -- has "$SKILL" 'never invent values'
